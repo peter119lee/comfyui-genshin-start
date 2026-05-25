@@ -10,6 +10,14 @@ on:
 permissions:
   contents: read
 
+# Force UTF-8 stdout/stderr on every runner. Windows console defaults to
+# cp1252 (or whatever the system locale is), which makes Python's print()
+# blow up with UnicodeEncodeError on the Chinese category / display name
+# strings the node uses (e.g. "原神/启动器", "立刻下载并启动原神").
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: "1"
+
 jobs:
   smoke:
     name: Smoke test (Python ${{ matrix.python-version }})
