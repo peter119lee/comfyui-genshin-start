@@ -68,3 +68,6 @@ jobs:
 
       - name: Run detection check (Windows runner has no Genshin, expect None)
         run: python comfyui_genshin_start/_check_detection.py
+
+      - name: Run Chinese-path discovery test
+        run: python comfyui_genshin_start/_test_chinese_path.py

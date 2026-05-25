@@ -59,12 +59,12 @@ def test_shallow_find(test_root: Path) -> None:
     print()
 
 
-def test_iter_candidate_exes() -> None:
+def test_iter_candidate_exes(test_root: Path) -> None:
     print("=== test 2: _iter_candidate_exes (real cross-drive scan) ===")
-    print("  Note: test_chinese_path adds an extra wrapper dir, so this scan")
+    print("  Note: tempdir adds an extra wrapper dir, so this scan")
     print("  may not reach our fake exes. Phase 2 (broad scan) is tested in test 2b.")
     hits = list(L._iter_candidate_exes())
-    real_test_hits = [h for h in hits if "test_chinese_path" in str(h)]
+    real_test_hits = [h for h in hits if str(test_root) in str(h)]
     print(f"  cross-drive scan found {len(real_test_hits)} of our fake Chinese installs")
     print(f"  total cross-drive hits (all drives): {len(hits)}")
     print()
@@ -85,6 +85,9 @@ def test_broad_scan_directly(test_root: Path) -> None:
 def test_real_launch_via_chinese_path(test_root: Path) -> None:
     """Copy notepad.exe into a Chinese-named dir and try os.startfile()."""
     print("=== test 3: os.startfile() through a Chinese path (real exe) ===")
+    if sys.platform != "win32":
+        print(f"  [SKIP] {sys.platform}: os.startfile is Windows-only")
+        return
     notepad_src = Path(r"C:\Windows\System32\notepad.exe")
     if not notepad_src.is_file():
         print("  notepad.exe not found, skipping")
@@ -137,7 +140,8 @@ def test_real_launch_via_chinese_path(test_root: Path) -> None:
 
 
 def main() -> None:
-    test_root = Path("L:/test_chinese_path")
+    import tempfile
+    test_root = Path(tempfile.mkdtemp(prefix="genshin_chinese_test_"))
     try:
         fakes = make_fake_tree(test_root)
         print(f"created {len(fakes)} fake exes under {test_root}")
@@ -146,7 +150,7 @@ def main() -> None:
         print()
 
         test_shallow_find(test_root)
-        test_iter_candidate_exes()
+        test_iter_candidate_exes(test_root)
         test_broad_scan_directly(test_root)
         test_real_launch_via_chinese_path(test_root)
     finally:
