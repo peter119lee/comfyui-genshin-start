@@ -99,6 +99,22 @@ DRIVE_ROOT_SKIP_NAMES = {
 HOYOPLAY_PROTOCOL_GLOBAL = "hyp-osel://"
 HOYOPLAY_PROTOCOL_CN = "hyp-cnb://"
 
+# HoYoPlay deep-link install hint. After silent-installing HoYoPlay we
+# fire this URL so the launcher opens with Genshin's install dialog
+# already focused. The user only needs to click "Install / 开始下载".
+# Format observed in HoYoPlay client: hyp-{global,cn}://launcher/install?game_biz=hk4e_{global,cn}
+HOYOPLAY_INSTALL_HINT_GLOBAL = "hyp-osel://launcher/install?game_biz=hk4e_global"
+HOYOPLAY_INSTALL_HINT_CN = "hyp-cnb://launcher/install?game_biz=hk4e_cn"
+
+# Silent NSIS install flag. HoYoPlay's installer is NSIS-based; passing
+# /S makes it skip every dialog and write to the default install path.
+# The installer still triggers UAC because its manifest demands admin.
+HOYOPLAY_SILENT_FLAG = "/S"
+
+# How long to wait for the silent install before declaring it stuck.
+# A clean HoYoPlay install runs in ~20-30s; 5 minutes is a generous cap.
+HOYOPLAY_SILENT_INSTALL_TIMEOUT_S = 300
+
 # Linux Wine prefixes worth scanning. We probe these *if and only if* the
 # user is on Linux; otherwise we don't waste time touching the home dir.
 LINUX_WINE_BASES = (
@@ -506,6 +522,96 @@ def launch_protocol(region: str) -> LaunchResult:
     return LaunchResult(True, "launched_protocol", proto)
 
 
+def launch_install_hint(region: str) -> LaunchResult:
+    """Open HoYoPlay focused on the Genshin install dialog.
+
+    Uses the deep-link `hyp-{osel,cnb}://launcher/install?game_biz=hk4e_*`
+    URL that HoYoPlay registers with Windows. After this fires the user
+    only needs one more click ("Install" / "开始下载") inside HoYoPlay's
+    UI; everything else is automatic.
+    """
+    url = HOYOPLAY_INSTALL_HINT_CN if region == "cn" else HOYOPLAY_INSTALL_HINT_GLOBAL
+    try:
+        opened = webbrowser.open(url)
+    except OSError as exc:
+        return LaunchResult(False, "launched_install_hint", f"{url}: {exc}")
+    if not opened:
+        return LaunchResult(False, "launched_install_hint", f"OS refused {url}")
+    return LaunchResult(True, "launched_install_hint", url)
+
+
+def silent_install_hoyoplay(installer_path: Path) -> LaunchResult:
+    """Run the HoYoPlay installer silently (NSIS /S) and wait for it.
+
+    Uses ``powershell Start-Process -Verb RunAs -Wait`` because:
+      - ``-Verb RunAs`` triggers UAC properly (subprocess.Popen can't, the
+        installer's manifest demands admin)
+      - ``-Wait`` blocks until the installer exits, so we know HoYoPlay
+        is ready before firing the install-hint deep link
+      - ``/S`` is the standard NSIS silent flag, skipping every dialog
+
+    Caller (ComfyUI worker) blocks for the duration. A clean install
+    finishes in 20-30 seconds; we cap at 5 minutes.
+    """
+    if sys.platform != "win32":
+        return LaunchResult(
+            False,
+            "silent_installed",
+            f"silent install not supported on {sys.platform}",
+        )
+
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        (
+            f"$ErrorActionPreference='Stop'; "
+            f"Start-Process -FilePath '{installer_path}' "
+            f"-ArgumentList '{HOYOPLAY_SILENT_FLAG}' "
+            f"-Verb RunAs -Wait -PassThru | "
+            f"Select-Object -ExpandProperty ExitCode"
+        ),
+    ]
+    try:
+        result = subprocess.run(  # noqa: S603 (path discovered locally)
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=HOYOPLAY_SILENT_INSTALL_TIMEOUT_S,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.TimeoutExpired:
+        return LaunchResult(
+            False,
+            "silent_installed",
+            f"installer timed out after {HOYOPLAY_SILENT_INSTALL_TIMEOUT_S}s",
+        )
+    except OSError as exc:
+        return LaunchResult(
+            False,
+            "silent_installed",
+            f"powershell call failed: {exc}",
+        )
+
+    if result.returncode != 0:
+        # PowerShell returned non-zero, often because user denied UAC.
+        stderr = (result.stderr or "").strip()
+        return LaunchResult(
+            False,
+            "silent_installed",
+            f"installer exited non-zero (UAC denied?): {stderr[:200]}",
+        )
+
+    installer_exit = (result.stdout or "").strip().splitlines()[-1:] or [""]
+    return LaunchResult(
+        True,
+        "silent_installed",
+        f"HoYoPlay silently installed (installer exit={installer_exit[0]})",
+    )
+
+
 def open_download_page(region: str) -> LaunchResult:
     url = DOWNLOAD_PAGE_CN if region == "cn" else DOWNLOAD_PAGE_GLOBAL
     try:
@@ -637,9 +743,31 @@ def perform(mode: str, region: str, dry_run: bool) -> LaunchResult:
         return launch_exe(exe)
 
     if sys.platform == "win32":
+        # HoYoPlay already installed but Genshin isn't: jump straight to the
+        # install hint URL so the launcher opens with the install dialog
+        # focused on Genshin (one click from "Install").
         if _hoyoplay_protocol_registered():
-            return launch_protocol(region)
-        return download_installer(region, run_after=True)
+            return launch_install_hint(region)
+
+        # Nothing installed. Run the full silent-install chain:
+        #   1. fetch HoYoPlay installer to %TEMP%
+        #   2. silent install with /S (one UAC prompt)
+        #   3. fire the install hint deep link to surface Genshin install dialog
+        download = download_installer(region, run_after=False)
+        if not download.ok:
+            return download
+        installer_path = Path(download.detail)
+
+        install = silent_install_hoyoplay(installer_path)
+        if not install.ok:
+            return install
+
+        hint = launch_install_hint(region)
+        return LaunchResult(
+            hint.ok,
+            "auto_installed",
+            f"HoYoPlay installed silently; {hint.detail}",
+        )
 
     # Non-Windows: no native client exists. Best path forward is cloud
     # (CN only) or the download page.

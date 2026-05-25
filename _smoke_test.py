@@ -37,9 +37,23 @@ def _stub_popen(*args, **kwargs):
     return _FakeProc()
 
 
+def _stub_run(*args, **kwargs):
+    """Stand in for subprocess.run used by silent_install_hoyoplay()."""
+    argv = args[0] if args else kwargs.get("args", [])
+    print(f"  [stub] subprocess.run(argv[0:3]={argv[:3]})")
+
+    class _FakeResult:
+        returncode = 0
+        stdout = "0\n"
+        stderr = ""
+
+    return _FakeResult()
+
+
 def main() -> None:
     webbrowser.open = _stub_webbrowser
     subprocess.Popen = _stub_popen
+    subprocess.run = _stub_run
 
     import comfyui_genshin_start as pkg
     from comfyui_genshin_start import launcher as L
@@ -77,6 +91,24 @@ def main() -> None:
 
     print("--- launch_only with no install ---")
     print(node.execute(trigger=True, mode="launch_only", region="global"))
+
+    print("--- auto on win32 with HoYoPlay protocol already registered ---")
+    L._hoyoplay_protocol_registered = lambda: True
+    print(node.execute(trigger=True, mode="auto", region="global"))
+
+    print("--- auto on win32 clean machine: download + silent install + hint ---")
+    L._hoyoplay_protocol_registered = lambda: False
+    # stub download_installer so we don't hit the network in CI
+    from pathlib import Path as _Path
+    def _stub_dl(region, run_after):
+        print(f"  [stub] download_installer(region={region}, run_after={run_after})")
+        return L.LaunchResult(True, "downloaded", r"C:\fake\HoYoPlay_install.exe")
+    _orig_dl = L.download_installer
+    L.download_installer = _stub_dl
+    try:
+        print(node.execute(trigger=True, mode="auto", region="global"))
+    finally:
+        L.download_installer = _orig_dl
 
     orig_platform = sys.platform
     try:
