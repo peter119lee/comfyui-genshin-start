@@ -83,7 +83,7 @@ def test_broad_scan_directly(test_root: Path) -> None:
 
 
 def test_real_launch_via_chinese_path(test_root: Path) -> None:
-    """Copy notepad.exe into a Chinese-named dir and try os.startfile()."""
+    """Confirm os.startfile() doesn't reject a Chinese-character path."""
     print("=== test 3: os.startfile() through a Chinese path (real exe) ===")
     if sys.platform != "win32":
         print(f"  [SKIP] {sys.platform}: os.startfile is Windows-only")
@@ -99,43 +99,25 @@ def test_real_launch_via_chinese_path(test_root: Path) -> None:
     shutil.copy2(notepad_src, target)
     print(f"  spawning: {target}")
 
-    # Use wmic to enumerate processes by full path, which handles unicode
-    # better than tasklist /FI on non-ASCII image names.
-    def matching_pids() -> set[int]:
-        out = subprocess.run(
-            ["wmic", "process", "get", "ProcessId,ExecutablePath", "/format:csv"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-        )
-        pids: set[int] = set()
-        for line in out.stdout.splitlines():
-            if "我的记事本.exe" in line or "中文资料夹" in line:
-                parts = line.split(",")
-                for p in parts:
-                    p = p.strip()
-                    if p.isdigit():
-                        pids.add(int(p))
-        return pids
-
-    before = matching_pids()
+    # We don't try to detect the spawned process: wmic was removed in
+    # Windows Server 2025 and tasklist's IMAGENAME filter is unreliable
+    # against non-ASCII names. The contract here is "ShellExecuteW
+    # accepts the wide path"; if the call didn't raise, that's verified.
     try:
         os.startfile(str(target))
     except OSError as exc:
         print(f"  [FAIL] os.startfile raised: {exc!r}")
         return
 
-    print("  os.startfile() returned without error (Chinese path accepted)")
-    time.sleep(2)
-    after = matching_pids()
-    new_pids = after - before
-    if new_pids:
-        print(f"  [OK] verified spawn: pid(s) {sorted(new_pids)}")
-        for pid in new_pids:
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)],
-                           capture_output=True, timeout=5)
-        print("  killed test process")
-    else:
-        print("  [INFO] spawn not detected via wmic; os.startfile call itself")
-        print("         did not raise, so the Chinese path was accepted by ShellExecuteW.")
+    print("  [OK] os.startfile() returned without error.")
+    print("       Chinese path was accepted by ShellExecuteW (Win32 wide-char API).")
+    # Best-effort cleanup: if the process did spawn, kill all matching by
+    # base name. taskkill failures (no such process) are fine.
+    time.sleep(1)
+    subprocess.run(
+        ["taskkill", "/F", "/IM", "我的记事本.exe"],
+        capture_output=True, timeout=5,
+    )
     print()
 
 
