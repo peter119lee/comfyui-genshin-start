@@ -1,0 +1,38 @@
+name: Publish to ComfyUI Registry
+
+# Triggers when pyproject.toml changes (the canonical "version bumped"
+# signal for ComfyUI Registry), or manually via the Actions tab.
+#
+# Setup (one-time):
+#   1. Sign in at https://registry.comfy.org as the publisher whose ID
+#      matches `pyproject.toml [tool.comfy] PublisherId = "peter119lee"`.
+#   2. Generate a Personal Access Token in the registry UI.
+#   3. Add it to this repo as a secret named REGISTRY_ACCESS_TOKEN
+#      (Settings -> Secrets and variables -> Actions -> New repository secret).
+#
+# Until the secret exists, this workflow will fail at the publish step;
+# CI in ci.yml is independent and unaffected.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-node:
+    name: Publish to Comfy Registry
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'peter119lee' }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Publish Custom Node
+        uses: Comfy-Org/publish-node-action@v1
+        with:
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
