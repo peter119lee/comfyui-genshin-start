@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-genshin-start"
 description = "ComfyUI node that immediately downloads and launches Genshin Impact."
-version = "1.0.0"
+version = "1.1.0"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
@@ -12,4 +12,4 @@ Repository = "https://github.com/peter119lee/comfyui-genshin-start"
 [tool.comfy]
 PublisherId = "peter119lee"
 DisplayName = "立刻下载并启动原神"
-Icon = ""
+Icon = "icon.jpg"

@@ -1,104 +1,37 @@
-# comfyui-genshin-start
+# 立刻下载并启动原神
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.en.md) | 简体中文
 
-ComfyUI custom node: **"Immediately download and launch Genshin Impact"**.
+![好想玩原神](icon.jpg)
 
-Drop this folder into your `ComfyUI/custom_nodes/`, restart ComfyUI, and the node appears under `原神/启动器` as `立刻下载并启动原神`.
+> 啊😲？云朵☁️😄，哒↘哒↗哒↘哒↗哒↘，好想玩原神😨，云☁️原神😙，当当当当当😊，看精彩纷纷👍🎊😆，云☁️原神😄，呜呜呜呜呜，好想玩原神😭😭😭云☁️原神，朋友已就位😊😃😆，一起玩原神，云☁️原神！啊啊啊啊啊😙，好想玩原神😙云☁️原神，哈哈哈哈哈🤣🤣🤣，一起玩原神，云☁️原神，好好好想，🤩想玩玩原神😋网页云端，低功耗不失真😌， WiFi网线🥰，都可以60帧😍，来来来来👏，进入云☁️原神
+>
+> #啊😲？云朵☁️😄，哒↘哒↗哒↘哒↗哒↘，好想玩原神😨，云☁️原神😙，当当当当当😊，看精彩纷纷👍🎊😆，云☁️原神😄，呜呜呜呜呜，好想玩原神😭😭😭云☁️原神，朋友已就位😊😃😆，一起玩原神，云☁️原神！啊啊啊啊啊😙，好想玩原神😙云☁️原神，哈哈哈哈哈🤣🤣🤣，一起玩原神，云☁️原神，好好好想，🤩想玩玩原神😋网页云端，低功耗不失真😌， WiFi网线🥰，都可以60帧😍，来来来来👏，进入云☁️原神
 
-## Behavior (`mode = auto`)
+ComfyUI 自定义节点。每次按 Queue 顺便启动原神。
 
-1. Walk Windows Uninstall registry hive (HKLM 64-bit + WOW6432Node + HKCU), match by `DisplayName` against `Genshin Impact` / `原神` / `YuanShen`, harvest install dirs from `InstallLocation` / `InstallPath` / `DisplayIcon`.
-2. Enumerate every existing drive letter (A-Z) and probe path suffixes like `HoYoPlay\games`, `Program Files\Genshin Impact`, `Games\Genshin Impact`.
-3. If `GenshinImpact.exe` / `YuanShen.exe` is found, launch via `os.startfile()` (uses ShellExecute, triggers UAC the same way a Start Menu double-click does).
-4. If not found but the HoYoPlay URI handler is registered, fire `hyp-osel://` / `hyp-cnb://` to wake the launcher.
-5. If nothing is installed, download the official HoYoPlay installer to `%TEMP%\comfyui_genshin_start\` and pop the install wizard via `os.startfile()`. No silent install.
-6. If the installer URL 404s, fall back to opening the official download page.
+## 安装
 
-## Installation
+把整个文件夹丢到 `ComfyUI/custom_nodes/` 下，重启 ComfyUI：
 
 ```bash
 git clone https://github.com/peter119lee/comfyui-genshin-start.git \
     /path/to/ComfyUI/custom_nodes/comfyui_genshin_start
 ```
 
-Restart ComfyUI.
+节点会出现在 `原神/启动器` 分类下，叫**「立刻下载并启动原神」**。
 
-## Inputs
+## 用法
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `trigger` | BOOLEAN | On/off switch |
-| `mode` | enum | `auto` / `launch_only` / `download_only` / `open_page` / `cloud` |
-| `region` | enum | `global` / `cn` |
-| `passthrough` | ANY (optional) | Upstream output passed unchanged downstream |
-| `dry_run` | BOOLEAN (optional) | Report install state only, no side effects |
+把节点接到工作流任意位置。`trigger=ON` + 按 Queue → 启动原神。完事。
 
-## Outputs
+## 平台行为
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `passthrough` | ANY | Same as input |
-| `status` | STRING | E.g. `[OK] launched_exe: G:\HoYoPlay\...\GenshinImpact.exe` |
-
-## Modes
-
-- **`auto`** — full chain: detect → launch / wake launcher / download
-- **`launch_only`** — only launch if the game is found, else `[FAIL]`
-- **`download_only`** — always re-download HoYoPlay installer
-- **`open_page`** — open the official download page
-- **`cloud`** — Cloud Genshin (CN only; global cloud was discontinued in 2023)
-
-## Safety
-
-- Read-only registry access
-- Only downloads from official `*.hoyoverse.com` / `*.mihoyo.com`
-- No silent install — installer pops a UI wizard
-- No admin elevation requested by the node itself; the game's own UAC manifest handles elevation
-- Designed for desktop ComfyUI use, not shared / production servers
-
-If you run ComfyUI headless or in Docker, set `dry_run = true` or use `mode = open_page`. Otherwise `webbrowser.open` will fail without `DISPLAY`.
-
-## Why `IS_CHANGED` returns `time.time()`
-
-ComfyUI caches node outputs by default. Without forced re-execution a second Queue press would not re-launch Genshin. Timestamp acts as an "always changed" sentinel.
-
-## Linux / macOS reality
-
-Genshin Impact has **no native Linux or macOS client**, and mhyprot2 is a Windows kernel driver, so Wine / Proton / CrossOver / Whisky all hit the anti-cheat wall.
-
-### Linux
-
-- `auto` first probes Wine prefixes:
-  - `~/.wine/drive_c`
-  - `~/.wine-genshin/drive_c`
-  - `~/Games` (Lutris default)
-  - `~/.var/app/com.usebottles.bottles/data/bottles/bottles` (Bottles flatpak)
-  - `~/.local/share/lutris/runners/wine`
-- If found, runs `wine GenshinImpact.exe`. Anti-cheat will probably block actual gameplay.
-- If not found and `region=cn`, opens Cloud Genshin (`ys.mihoyo.com/cloud/`).
-- If not found and `region=global`, opens the download page.
-- `download_only` opens the download page (the `.exe` installer is useless under Wine).
-- `mode = cloud` + `region=cn` is the only path that actually plays on Linux.
-
-### macOS
-
-No Wine scan (CrossOver / Whisky paths vary). `auto` always falls through to cloud (CN) or open_page (global).
-
-### Headless / Docker
-
-Don't trigger this node. Use `dry_run` if you must run it; otherwise `webbrowser.open()` errors without `DISPLAY`.
-
-## Diagnostics
-
-If detection misses your install, run:
-
-```bash
-python comfyui_genshin_start/_diagnose.py
-```
-
-It dumps registry probes, Uninstall hive walk, HoYoPlay URI handler status, filesystem scan, and a deep search for the game exe.
+- **Windows** — 找到原神就启动，没装就下 HoYoPlay 安装器
+- **Linux** — 没本地 Wine 装的原神？**直接打开云原神** `ys.mihoyo.com/cloud/`
+  > 哒↘哒↗哒↘哒↗哒↘，好想玩原神😨，云☁️原神😙
+- **macOS** — 同 Linux
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT。
